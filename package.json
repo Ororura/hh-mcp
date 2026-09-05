@@ -1,0 +1,30 @@
+{
+  "name": "hh-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local MCP server for safe HH.ru applicant workflow automation",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "mcp": "node --import tsx src/main.ts",
+    "hh:login": "node --import tsx src/cli/login.ts",
+    "hh:smoke": "node --import tsx src/cli/smoke.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.0.0",
+    "playwright": "^1.63.0",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.0"
+  }
+}
