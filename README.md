@@ -129,7 +129,10 @@ Input:
 ```json
 {
   "vacancyUrl": "https://hh.ru/vacancy/123456789",
-  "coverLetter": "Здравствуйте! Рассмотрите, пожалуйста, мой отклик."
+  "coverLetter": "Здравствуйте! Рассмотрите, пожалуйста, мой отклик.",
+  "resume": {
+    "id": "8e190203ff110169ee0039ed1f6e45526c5843"
+  }
 }
 ```
 
@@ -146,12 +149,23 @@ Input:
   },
   "application": {
     "coverLetterFieldFound": true,
-    "questionnaireRequired": false
+    "coverLetterFilled": true,
+    "questionnaireRequired": false,
+    "selectedResume": {
+      "id": "8e190203ff110169ee0039ed1f6e45526c5843",
+      "title": "Java Backend разработчик"
+    }
   }
 }
 ```
 
-Дополнительные statuses: `MISSING_REQUIRED_COVER_LETTER`, `QUESTIONNAIRE_REQUIRED` и общие terminal states.
+Резюме можно выбрать по стабильному HH ID (`resume.id`) или точному названию (`resume.title`).
+Если вариант не найден или название неоднозначно, возвращается `RESUME_NOT_FOUND` со списком
+доступных резюме; submit не выполняется.
+
+Дополнительные statuses: `RESUME_NOT_FOUND`, `MISSING_REQUIRED_COVER_LETTER`, `QUESTIONNAIRE_REQUIRED` и общие terminal states.
+Если письмо передано, server раскрывает скрытую секцию HH, заполняет textarea и проверяет её
+значение. Если это подтвердить не удалось, flow останавливается без submit.
 
 ### `hh_submit_application`
 
@@ -162,7 +176,10 @@ Input:
 ```json
 {
   "vacancyUrl": "https://hh.ru/vacancy/123456789",
-  "coverLetter": "Здравствуйте! Рассмотрите, пожалуйста, мой отклик."
+  "coverLetter": "Здравствуйте! Рассмотрите, пожалуйста, мой отклик.",
+  "resume": {
+    "title": "Java Backend разработчик"
+  }
 }
 ```
 
@@ -176,11 +193,20 @@ Input:
     "title": "Java Backend Developer",
     "employer": "Example",
     "url": "https://hh.ru/vacancy/123456789"
+  },
+  "application": {
+    "coverLetterFieldFound": true,
+    "coverLetterFilled": true,
+    "questionnaireRequired": false,
+    "selectedResume": {
+      "id": "8e190203ff110169ee0039ed1f6e45526c5843",
+      "title": "Java Backend разработчик"
+    }
   }
 }
 ```
 
-Один click не считается успехом. Если UI не подтвердил результат, server возвращает `FAILED` с `UNEXPECTED_PAGE_STATE`, сохраняет screenshot и не повторяет submit автоматически.
+Перед click server повторно проверяет, что переданное письмо находится в форме. Один click не считается успехом. Если UI не подтвердил результат, server возвращает `FAILED` с `UNEXPECTED_PAGE_STATE`, сохраняет screenshot и не повторяет submit автоматически.
 
 ## Ошибки и результаты
 

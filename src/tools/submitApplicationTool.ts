@@ -9,12 +9,12 @@ export function registerSubmitApplicationTool(server: McpServer, service: HhAuto
     {
       title: "Submit HH application",
       description:
-        "DESTRUCTIVE: submits a real application to an HH.ru vacancy on behalf of the authenticated user. Call only after explicit approval.",
+        "DESTRUCTIVE: selects the requested resume and submits a real application to an HH.ru vacancy on behalf of the authenticated user. Call only after explicit approval.",
       inputSchema: applicationInputSchema,
       outputSchema: submitApplicationOutputSchema,
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
     },
-    async ({ vacancyUrl, coverLetter }) =>
-      toMcpToolResult(await service.submitApplication(vacancyUrl, coverLetter)),
+    async ({ vacancyUrl, coverLetter, resume }) =>
+      toMcpToolResult(await service.submitApplication(vacancyUrl, coverLetter, resume)),
   );
 }

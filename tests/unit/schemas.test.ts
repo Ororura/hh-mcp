@@ -16,6 +16,27 @@ describe("MCP schemas", () => {
     ).toBe(false);
   });
 
+  it("accepts resume selection by id or title and rejects an empty selector", () => {
+    expect(
+      applicationInputSchema.safeParse({
+        vacancyUrl: "https://hh.ru/vacancy/123",
+        resume: { id: "resume-id" },
+      }).success,
+    ).toBe(true);
+    expect(
+      applicationInputSchema.safeParse({
+        vacancyUrl: "https://hh.ru/vacancy/123",
+        resume: { title: "Java Backend Developer" },
+      }).success,
+    ).toBe(true);
+    expect(
+      applicationInputSchema.safeParse({
+        vacancyUrl: "https://hh.ru/vacancy/123",
+        resume: {},
+      }).success,
+    ).toBe(false);
+  });
+
   it("does not advertise submit as a prepare result", () => {
     expect(prepareApplicationOutputSchema.safeParse({ status: "SUBMITTED" }).success).toBe(false);
     expect(prepareApplicationOutputSchema.safeParse({ status: "READY_TO_SUBMIT" }).success).toBe(

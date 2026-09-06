@@ -41,12 +41,18 @@ export const HhSelectors = {
     '[role="dialog"]',
   ],
   questionnaire: [
+    '[data-qa="task-question"]',
     '[data-qa="vacancy-response-popup-form-questionnaire"]',
     '[data-qa="vacancy-response-popup-form-question"]',
     '[data-qa*="employer-question"]',
+    'textarea[name^="task_"][name$="_text"]',
     'textarea[name^="question_"]',
     'input[name^="question_"]',
   ],
+  coverLetterToggle: ['[data-qa="vacancy-response-letter-toggle"]'],
+  resumeTitle: '[data-qa="resume-title"]',
+  resumeOptionList: '[data-qa="magritte-select-option-list"][role="listbox"]',
+  resumeOption: '[role="option"][data-magritte-select-option]',
   coverLetter: [
     '[data-qa="vacancy-response-popup-form-letter-input"]',
     '[data-qa="vacancy-response-letter-input"]',
@@ -72,6 +78,7 @@ export const HhTextPatterns = {
   apply: /^откликнуться$/i,
   questionnaire: /вопросы работодателя|ответьте на вопросы|дополнительные вопросы/i,
   coverLetter: /сопроводительное письмо/i,
+  addCoverLetter: /^добавить$/i,
   submit: /^(?:отправить|откликнуться)$/i,
   success: /отклик отправлен|вы откликнулись|отклик доставлен/i,
 } as const;

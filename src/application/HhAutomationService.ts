@@ -13,6 +13,7 @@ import {
   type SessionStatusResult,
   type VacancySummary,
 } from "../domain/results.js";
+import type { ResumeSelection, ResumeSummary } from "../domain/resume.js";
 import { diagnosticStatuses } from "../domain/statuses.js";
 import type { ApplicationHistoryRepository } from "../history/ApplicationHistoryRepository.js";
 import { HhApplicationFlow } from "../hh/HhApplicationFlow.js";
@@ -98,12 +99,20 @@ export class HhAutomationService {
     }, parsed.url, "hh_inspect_vacancy");
   }
 
-  async prepareApplication(vacancyUrl: string, coverLetter?: string): Promise<ApplicationResult> {
-    return this.runApplication("prepare", vacancyUrl, coverLetter);
+  async prepareApplication(
+    vacancyUrl: string,
+    coverLetter?: string,
+    resume?: ResumeSelection,
+  ): Promise<ApplicationResult> {
+    return this.runApplication("prepare", vacancyUrl, coverLetter, resume);
   }
 
-  async submitApplication(vacancyUrl: string, coverLetter?: string): Promise<ApplicationResult> {
-    return this.runApplication("submit", vacancyUrl, coverLetter);
+  async submitApplication(
+    vacancyUrl: string,
+    coverLetter?: string,
+    resume?: ResumeSelection,
+  ): Promise<ApplicationResult> {
+    return this.runApplication("submit", vacancyUrl, coverLetter, resume);
   }
 
   async close(): Promise<void> {
@@ -115,6 +124,7 @@ export class HhAutomationService {
     mode: "prepare" | "submit",
     vacancyUrl: string,
     coverLetter?: string,
+    resume?: ResumeSelection,
   ): Promise<ApplicationResult> {
     const parsed = this.urlPolicy.parseVacancyUrl(vacancyUrl);
     const label = mode === "prepare" ? "prepare-application" : "submit-application";
@@ -161,9 +171,24 @@ export class HhAutomationService {
       this.logger.info("[HH] Opening application form");
       machine.transition({ stage: "APPLICATION_ENTRY", vacancyId: parsed.id });
       const flow = new HhApplicationFlow(session.page, this.urlPolicy, this.config);
-      const opened = await flow.open(vacancyPage, mode === "prepare");
+      const opened = await flow.open(
+        vacancyPage,
+        mode === "prepare",
+        Boolean(coverLetter?.trim() || resume),
+      );
 
       if (opened.kind === "SUBMITTED") {
+        if (mode === "submit" && (coverLetter?.trim() || resume)) {
+          machine.transition({
+            stage: "TERMINAL",
+            vacancyId: parsed.id,
+            reason: "UNEXPECTED_PAGE_STATE",
+          });
+          return this.failed(
+            "HH reported a direct submission before requested application fields could be verified",
+            vacancy,
+          );
+        }
         if (mode === "submit") {
           machine.transition({ stage: "SUBMITTED", vacancyId: parsed.id });
           this.logger.info("[HH] Submission confirmed");
@@ -179,6 +204,22 @@ export class HhAutomationService {
       }
       machine.transition({ stage: "APPLICATION_FORM", vacancyId: parsed.id });
 
+      let selectedResume: ResumeSummary | undefined;
+      if (resume) {
+        const resumeSelection = await flow.selectResume(resume);
+        if (!resumeSelection.selected) {
+          machine.transition({ stage: "TERMINAL", vacancyId: parsed.id, reason: "RESUME_NOT_FOUND" });
+          return {
+            status: "RESUME_NOT_FOUND",
+            vacancy,
+            message: "Requested resume was not found or its title is ambiguous",
+            application: { availableResumes: resumeSelection.availableResumes },
+          };
+        }
+        selectedResume = resumeSelection.resume;
+        this.logger.info("[HH] Resume selected");
+      }
+
       const prepared = await flow.prepareForm(opened.root, coverLetter);
       if (prepared.missingRequiredCoverLetter) {
         machine.transition({
@@ -189,10 +230,29 @@ export class HhAutomationService {
         return {
           status: "MISSING_REQUIRED_COVER_LETTER",
           vacancy,
-          application: { coverLetterFieldFound: true, questionnaireRequired: false },
+          application: {
+            coverLetterFieldFound: true,
+            coverLetterFilled: false,
+            questionnaireRequired: false,
+            ...(selectedResume ? { selectedResume } : {}),
+          },
         };
       }
-      if (prepared.coverLetterFieldFound && coverLetter?.trim()) {
+      if (coverLetter?.trim() && !prepared.coverLetterFilled) {
+        machine.transition({ stage: "TERMINAL", vacancyId: parsed.id, reason: "UNSUPPORTED_FLOW" });
+        return {
+          status: "UNSUPPORTED_FLOW",
+          vacancy,
+          message: "Cover letter was provided but HH did not expose a writable cover-letter field",
+          application: {
+            coverLetterFieldFound: prepared.coverLetterFieldFound,
+            coverLetterFilled: false,
+            questionnaireRequired: false,
+            ...(selectedResume ? { selectedResume } : {}),
+          },
+        };
+      }
+      if (prepared.coverLetterFilled) {
         this.logger.info("[HH] Cover letter filled");
       }
 
@@ -208,14 +268,16 @@ export class HhAutomationService {
           vacancy,
           application: {
             coverLetterFieldFound: prepared.coverLetterFieldFound,
+            coverLetterFilled: prepared.coverLetterFilled,
             questionnaireRequired: false,
+            ...(selectedResume ? { selectedResume } : {}),
           },
         };
       }
 
       machine.transition({ stage: "SUBMITTING", vacancyId: parsed.id });
       this.logger.info("[HH] Submitting");
-      await flow.submit(prepared.root);
+      await flow.submit(prepared.root, coverLetter, selectedResume);
       if (!(await flow.confirmSubmission())) {
         machine.transition({
           stage: "TERMINAL",
@@ -227,7 +289,16 @@ export class HhAutomationService {
 
       machine.transition({ stage: "SUBMITTED", vacancyId: parsed.id });
       this.logger.info("[HH] Submission confirmed");
-      return { status: "SUBMITTED", vacancy };
+      return {
+        status: "SUBMITTED",
+        vacancy,
+        application: {
+          coverLetterFieldFound: prepared.coverLetterFieldFound,
+          coverLetterFilled: prepared.coverLetterFilled,
+          questionnaireRequired: false,
+          ...(selectedResume ? { selectedResume } : {}),
+        },
+      };
     }, parsed.url, toolName);
   }
 

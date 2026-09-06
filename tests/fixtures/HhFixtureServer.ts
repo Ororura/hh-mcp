@@ -6,6 +6,8 @@ export type FixtureSessionMode = "authenticated" | "auth-required";
 export class HhFixtureServer {
   #server = createServer((request, response) => this.handle(request, response));
   #submitCount = 0;
+  #submittedCoverLetter = "";
+  #submittedResumeId = "";
   sessionMode: FixtureSessionMode = "authenticated";
   baseUrl = "";
 
@@ -32,8 +34,18 @@ export class HhFixtureServer {
     return this.#submitCount;
   }
 
+  get submittedCoverLetter(): string {
+    return this.#submittedCoverLetter;
+  }
+
+  get submittedResumeId(): string {
+    return this.#submittedResumeId;
+  }
+
   resetSubmissions(): void {
     this.#submitCount = 0;
+    this.#submittedCoverLetter = "";
+    this.#submittedResumeId = "";
   }
 
   vacancyUrl(id: number): string {
@@ -42,8 +54,16 @@ export class HhFixtureServer {
 
   private handle(request: IncomingMessage, response: ServerResponse): void {
     const url = new URL(request.url ?? "/", this.baseUrl || "http://127.0.0.1");
-    if (url.pathname === "/test-submit" && request.method === "POST") {
+    if (url.pathname === "/vacancy-response-submit" && request.method === "POST") {
       this.#submitCount += 1;
+      const coverLetterHeader = request.headers["x-cover-letter"];
+      this.#submittedCoverLetter = Array.isArray(coverLetterHeader)
+        ? (coverLetterHeader[0] ?? "")
+        : (coverLetterHeader ?? "");
+      const resumeHeader = request.headers["x-resume-id"];
+      this.#submittedResumeId = Array.isArray(resumeHeader)
+        ? (resumeHeader[0] ?? "")
+        : (resumeHeader ?? "");
       response.writeHead(200, { "content-type": "application/json" });
       response.end('{"ok":true}');
       return;
@@ -103,6 +123,21 @@ export class HhFixtureServer {
           "authenticated",
           scripts,
         );
+      case 116:
+        return this.page(
+          "Hidden letter",
+          this.applyButton("showHiddenLetterForm()"),
+          "authenticated",
+          scripts,
+        );
+      case 117:
+      case 118:
+        return this.page(
+          "Resume selection",
+          this.applyButton("showResumeForm()"),
+          "authenticated",
+          scripts,
+        );
       default:
         return this.page("Backend Developer", this.applyButton("showForm(true, false)"), "authenticated", scripts);
     }
@@ -136,7 +171,11 @@ export class HhFixtureServer {
 
 const scripts = `
   function showQuestionnaire() {
-    document.body.insertAdjacentHTML('beforeend', '<div data-qa="vacancy-response-popup-form-questionnaire">Вопросы работодателя</div>');
+    document.body.insertAdjacentHTML('beforeend',
+      '<h2>Ответьте на вопросы</h2>' +
+      '<div data-qa="task-question"><label>Почему вы хотите у нас работать?</label>' +
+      '<textarea name="task_123_text"></textarea></div>' +
+      '<button data-qa="vacancy-response-submit-popup" onclick="submitApplication()">Откликнуться</button>');
   }
   function showForm(withLetter, required) {
     const letter = withLetter
@@ -147,7 +186,14 @@ const scripts = `
       '<button data-qa="vacancy-response-submit-popup" onclick="submitApplication()">Отправить</button></div>');
   }
   async function submitApplication() {
-    const response = await fetch('/test-submit', { method: 'POST' });
+    const coverLetter = document.querySelector('[data-qa="vacancy-response-popup-form-letter-input"]')?.value || '';
+    const response = await fetch('/vacancy-response-submit', {
+      method: 'POST',
+      headers: {
+        'x-cover-letter': coverLetter,
+        'x-resume-id': document.querySelector('[data-selected-resume-id]')?.getAttribute('data-selected-resume-id') || '',
+      },
+    });
     if (response.ok) {
       document.querySelector('[data-qa="vacancy-response-popup"]')?.remove();
       document.body.insertAdjacentHTML('beforeend', '<div data-qa="vacancy-response-success">Отклик отправлен</div>');
@@ -159,6 +205,49 @@ const scripts = `
       '<button data-qa="vacancy-response-submit-popup" onclick="submitWithoutConfirmation()">Отправить</button></div>');
   }
   async function submitWithoutConfirmation() {
-    await fetch('/test-submit', { method: 'POST' });
+    await fetch('/vacancy-response-submit', { method: 'POST' });
+  }
+  function showHiddenLetterForm() {
+    document.body.insertAdjacentHTML('beforeend',
+      '<div role="dialog" data-qa="vacancy-response-popup">' +
+      '<div role="button" tabindex="0" data-qa="vacancy-response-letter-toggle">' +
+      '<span>Сопроводительное письмо</span><span onclick="showHiddenLetter(event)">Добавить</span></div>' +
+      '<button data-qa="vacancy-response-submit-popup" onclick="submitApplication()">Отправить</button></div>');
+  }
+  function showHiddenLetter(event) {
+    event.stopPropagation();
+    document.querySelector('[data-qa="vacancy-response-letter-toggle"]')?.insertAdjacentHTML(
+      'beforebegin',
+      '<textarea data-qa="vacancy-response-popup-form-letter-input"></textarea>',
+    );
+    document.querySelector('[data-qa="vacancy-response-letter-toggle"]')?.remove();
+  }
+  function showResumeForm() {
+    document.body.insertAdjacentHTML('beforeend',
+      '<div role="dialog" data-qa="vacancy-response-popup">' +
+      '<div id="resume-picker" role="button" tabindex="0" data-selected-resume-id="resume-frontend" onclick="toggleResumeOptions()">' +
+      '<div data-qa="resume-title">Frontend Developer</div></div>' +
+      '<div data-qa="magritte-select-option-list" role="listbox" style="display:none">' +
+      '<label role="option" aria-selected="true" data-magritte-select-option="resume-frontend" onclick="selectResume(event, this)">' +
+      '<div data-qa="resume-title">Frontend Developer</div></label>' +
+      '<label role="option" aria-selected="false" data-magritte-select-option="resume-java" onclick="selectResume(event, this)">' +
+      '<div data-qa="resume-title">Java Backend Developer</div></label></div>' +
+      '<textarea data-qa="vacancy-response-popup-form-letter-input"></textarea>' +
+      '<button data-qa="vacancy-response-submit-popup" onclick="submitApplication()">Отправить</button></div>');
+  }
+  function toggleResumeOptions() {
+    const list = document.querySelector('[data-qa="magritte-select-option-list"]');
+    list.style.display = list.style.display === 'none' ? 'block' : 'none';
+  }
+  function selectResume(event, option) {
+    event.stopPropagation();
+    const picker = document.querySelector('#resume-picker');
+    const selectedId = option.getAttribute('data-magritte-select-option');
+    const selectedTitle = option.querySelector('[data-qa="resume-title"]').textContent;
+    picker.setAttribute('data-selected-resume-id', selectedId);
+    picker.querySelector('[data-qa="resume-title"]').textContent = selectedTitle;
+    document.querySelectorAll('[role="option"]').forEach(item =>
+      item.setAttribute('aria-selected', String(item === option)));
+    document.querySelector('[data-qa="magritte-select-option-list"]').style.display = 'none';
   }
 `;

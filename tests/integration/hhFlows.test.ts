@@ -125,11 +125,20 @@ describe("HH browser flows", () => {
     expect(fixture.submitCount).toBe(0);
   });
 
-  it("supports a form without a cover-letter field", async () => {
-    const result = await service.prepareApplication(fixture.vacancyUrl(108), "Unused");
+  it("supports a form without a cover-letter field when no letter was requested", async () => {
+    const result = await service.prepareApplication(fixture.vacancyUrl(108));
     expect(result).toMatchObject({
       status: "READY_TO_SUBMIT",
-      application: { coverLetterFieldFound: false },
+      application: { coverLetterFieldFound: false, coverLetterFilled: false },
+    });
+    expect(fixture.submitCount).toBe(0);
+  });
+
+  it("does not submit when a requested cover letter cannot be added", async () => {
+    const result = await service.submitApplication(fixture.vacancyUrl(108), "Must be attached");
+    expect(result).toMatchObject({
+      status: "UNSUPPORTED_FLOW",
+      application: { coverLetterFieldFound: false, coverLetterFilled: false },
     });
     expect(fixture.submitCount).toBe(0);
   });
@@ -148,10 +157,75 @@ describe("HH browser flows", () => {
     expect(fixture.submitCount).toBe(0);
   });
 
+  it("never clicks submit when the current HH task-questionnaire UI is present", async () => {
+    const result = await service.submitApplication(fixture.vacancyUrl(103), "Hello");
+    expect(result.status).toBe("QUESTIONNAIRE_REQUIRED");
+    expect(fixture.submitCount).toBe(0);
+  });
+
+  it("reveals, fills, and verifies a hidden cover-letter field before submit", async () => {
+    const coverLetter = "EXPECTED-HIDDEN-COVER-LETTER";
+    const result = await service.submitApplication(fixture.vacancyUrl(116), coverLetter);
+    expect(result).toMatchObject({
+      status: "SUBMITTED",
+      application: { coverLetterFieldFound: true, coverLetterFilled: true },
+    });
+    expect(fixture.submitCount).toBe(1);
+    expect(fixture.submittedCoverLetter).toBe(coverLetter);
+  });
+
+  it("selects a resume by stable HH id before submit", async () => {
+    const result = await service.submitApplication(fixture.vacancyUrl(118), "Hello", {
+      id: "resume-java",
+    });
+    expect(result).toMatchObject({
+      status: "SUBMITTED",
+      application: {
+        coverLetterFilled: true,
+        selectedResume: { id: "resume-java", title: "Java Backend Developer" },
+      },
+    });
+    expect(fixture.submitCount).toBe(1);
+    expect(fixture.submittedResumeId).toBe("resume-java");
+  });
+
+  it("selects a resume by exact title in dry-run mode", async () => {
+    const result = await service.prepareApplication(fixture.vacancyUrl(117), "Hello", {
+      title: "Java Backend Developer",
+    });
+    expect(result).toMatchObject({
+      status: "READY_TO_SUBMIT",
+      application: {
+        selectedResume: { id: "resume-java", title: "Java Backend Developer" },
+      },
+    });
+    expect(fixture.submitCount).toBe(0);
+  });
+
+  it("does not submit when the requested resume is unavailable", async () => {
+    const result = await service.submitApplication(fixture.vacancyUrl(117), "Hello", {
+      id: "missing-resume",
+    });
+    expect(result).toMatchObject({
+      status: "RESUME_NOT_FOUND",
+      application: {
+        availableResumes: [
+          { id: "resume-frontend", title: "Frontend Developer" },
+          { id: "resume-java", title: "Java Backend Developer" },
+        ],
+      },
+    });
+    expect(fixture.submitCount).toBe(0);
+  });
+
   it("submits once and requires UI confirmation", async () => {
     const result = await service.submitApplication(fixture.vacancyUrl(106), "Hello");
-    expect(result.status).toBe("SUBMITTED");
+    expect(result).toMatchObject({
+      status: "SUBMITTED",
+      application: { coverLetterFieldFound: true, coverLetterFilled: true },
+    });
     expect(fixture.submitCount).toBe(1);
+    expect(fixture.submittedCoverLetter).toBe("Hello");
   });
 
   it("uses local history as duplicate protection in addition to the UI check", async () => {
@@ -168,8 +242,22 @@ describe("HH browser flows", () => {
     expect(fixture.submitCount).toBe(0);
   });
 
-  it("supports an explicitly authorized direct-submit flow", async () => {
+  it("blocks a direct-submit entry when a cover letter was requested", async () => {
     const result = await service.submitApplication(fixture.vacancyUrl(113), "Hello");
+    expect(result.status).toBe("UNSUPPORTED_FLOW");
+    expect(fixture.submitCount).toBe(0);
+  });
+
+  it("blocks a direct-submit entry when resume selection was requested", async () => {
+    const result = await service.submitApplication(fixture.vacancyUrl(113), undefined, {
+      id: "resume-java",
+    });
+    expect(result.status).toBe("UNSUPPORTED_FLOW");
+    expect(fixture.submitCount).toBe(0);
+  });
+
+  it("supports an explicitly authorized direct-submit flow without a cover letter", async () => {
+    const result = await service.submitApplication(fixture.vacancyUrl(113));
     expect(result.status).toBe("SUBMITTED");
     expect(fixture.submitCount).toBe(1);
   });

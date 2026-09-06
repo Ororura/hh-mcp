@@ -1,4 +1,5 @@
 import type { TechnicalError } from "./errors.js";
+import type { ResumeSummary } from "./resume.js";
 import type { ApplicationStatus, SessionStatus, VacancyStatus } from "./statuses.js";
 
 export type VacancySummary = {
@@ -13,7 +14,10 @@ export type ApplicationDetails = {
   alreadyApplied?: boolean;
   questionnaireLikely?: boolean;
   coverLetterFieldFound?: boolean;
+  coverLetterFilled?: boolean;
   questionnaireRequired?: boolean;
+  selectedResume?: ResumeSummary;
+  availableResumes?: ResumeSummary[];
 };
 
 export type BaseToolResult = {

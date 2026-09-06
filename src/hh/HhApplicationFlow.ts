@@ -1,10 +1,17 @@
 import type { Locator, Page, Route } from "playwright";
 import type { HhConfig } from "../config/config.js";
 import { HhTechnicalError } from "../domain/errors.js";
+import type { ResumeSelection, ResumeSummary } from "../domain/resume.js";
 import { HhApplicationDetector, type ApplicationUiState } from "./HhApplicationDetector.js";
-import { HhSelectors, HhTextSnippets, knownSubmissionUrlPattern } from "./HhSelectors.js";
+import {
+  HhSelectors,
+  HhTextPatterns,
+  HhTextSnippets,
+  knownSubmissionUrlPattern,
+} from "./HhSelectors.js";
 import type { HhUrlPolicy } from "./HhUrlPolicy.js";
 import type { HhVacancyPage } from "./HhVacancyPage.js";
+import { firstVisible } from "./locatorUtils.js";
 
 export type OpenApplicationResult = ApplicationUiState & {
   blockedMutation?: boolean;
@@ -12,14 +19,21 @@ export type OpenApplicationResult = ApplicationUiState & {
 
 export type PreparedForm = {
   coverLetterFieldFound: boolean;
+  coverLetterFilled: boolean;
   missingRequiredCoverLetter: boolean;
   root?: Locator;
 };
+
+export type ResumeSelectionResult =
+  | { selected: true; resume: ResumeSummary; availableResumes: ResumeSummary[] }
+  | { selected: false; availableResumes: ResumeSummary[] };
 
 export class HhApplicationFlow {
   readonly #detector: HhApplicationDetector;
   #interceptedExternalUrl?: string;
   #blockedMutation = false;
+  #dryRun = false;
+  #submissionArmed = false;
   #popupTask: Promise<void> | undefined;
 
   constructor(
@@ -30,8 +44,14 @@ export class HhApplicationFlow {
     this.#detector = new HhApplicationDetector(urlPolicy);
   }
 
-  async open(vacancyPage: HhVacancyPage, dryRun: boolean): Promise<OpenApplicationResult> {
-    await this.installNavigationGuard(dryRun);
+  async open(
+    vacancyPage: HhVacancyPage,
+    dryRun: boolean,
+    requireApplicationForm = false,
+  ): Promise<OpenApplicationResult> {
+    this.#dryRun = dryRun || requireApplicationForm;
+    this.#submissionArmed = !dryRun && !requireApplicationForm;
+    await this.installNavigationGuard();
     this.page.once("popup", (popup) => {
       this.#popupTask = this.capturePopup(popup);
     });
@@ -54,29 +74,128 @@ export class HhApplicationFlow {
   }
 
   async prepareForm(root: Locator | undefined, coverLetter?: string): Promise<PreparedForm> {
-    const field = await this.#detector.coverLetterField(this.page);
+    const normalizedLetter = coverLetter?.trim();
+    let field = await this.#detector.coverLetterField(this.page);
+    if (!field && normalizedLetter) field = await this.revealCoverLetterField();
+
     if (!field) {
-      return { coverLetterFieldFound: false, missingRequiredCoverLetter: false, ...(root ? { root } : {}) };
+      return {
+        coverLetterFieldFound: false,
+        coverLetterFilled: false,
+        missingRequiredCoverLetter: false,
+        ...(root ? { root } : {}),
+      };
     }
 
     const required =
       (await field.getAttribute("required")) !== null ||
       (await field.getAttribute("aria-required")) === "true";
-    const normalizedLetter = coverLetter?.trim();
     if (required && !normalizedLetter) {
-      return { coverLetterFieldFound: true, missingRequiredCoverLetter: true, ...(root ? { root } : {}) };
+      return {
+        coverLetterFieldFound: true,
+        coverLetterFilled: false,
+        missingRequiredCoverLetter: true,
+        ...(root ? { root } : {}),
+      };
     }
+
     if (normalizedLetter) await field.fill(normalizedLetter);
-    return { coverLetterFieldFound: true, missingRequiredCoverLetter: false, ...(root ? { root } : {}) };
+    const coverLetterFilled = normalizedLetter
+      ? (await field.inputValue()) === normalizedLetter
+      : false;
+    return {
+      coverLetterFieldFound: true,
+      coverLetterFilled,
+      missingRequiredCoverLetter: false,
+      ...(root ? { root } : {}),
+    };
+  }
+
+  async selectResume(selection: ResumeSelection): Promise<ResumeSelectionResult> {
+    const title = this.page.locator(HhSelectors.resumeTitle).first();
+    const control = this.page.getByRole("button").filter({ has: title }).first();
+    if (!(await control.isVisible().catch(() => false))) {
+      return { selected: false, availableResumes: [] };
+    }
+
+    await control.click({ timeout: this.config.timeouts.element });
+    const optionList = this.page.locator(HhSelectors.resumeOptionList).first();
+    const optionListVisible = await optionList
+      .waitFor({ state: "visible", timeout: this.config.timeouts.element })
+      .then(() => true)
+      .catch(() => false);
+    if (!optionListVisible) {
+      return { selected: false, availableResumes: [] };
+    }
+
+    const optionLocators = optionList.locator(HhSelectors.resumeOption);
+    const availableResumes: ResumeSummary[] = [];
+    const matches: Array<{ locator: Locator; resume: ResumeSummary }> = [];
+    for (let index = 0; index < (await optionLocators.count()); index += 1) {
+      const option = optionLocators.nth(index);
+      const id = await option.getAttribute("data-magritte-select-option");
+      const optionTitle = normalizeResumeTitle(
+        (await option.locator(HhSelectors.resumeTitle).first().textContent()) ?? "",
+      );
+      if (!id || !optionTitle) continue;
+
+      const resume = { id, title: optionTitle };
+      availableResumes.push(resume);
+      const idMatches = !selection.id || selection.id === id;
+      const titleMatches =
+        !selection.title ||
+        normalizeResumeTitle(selection.title).toLocaleLowerCase("ru") ===
+          optionTitle.toLocaleLowerCase("ru");
+      if (idMatches && titleMatches) matches.push({ locator: option, resume });
+    }
+
+    if (matches.length !== 1) {
+      return { selected: false, availableResumes };
+    }
+
+    const match = matches[0];
+    if (!match) return { selected: false, availableResumes };
+    await match.locator.click({ timeout: this.config.timeouts.element });
+    await control
+      .getByText(match.resume.title, { exact: true })
+      .waitFor({ state: "visible", timeout: this.config.timeouts.element });
+    return { selected: true, resume: match.resume, availableResumes };
   }
 
   async hasSubmitButton(root?: Locator): Promise<boolean> {
     return (await this.#detector.submitButton(this.page, root)) !== undefined;
   }
 
-  async submit(root?: Locator): Promise<void> {
+  async submit(
+    root?: Locator,
+    expectedCoverLetter?: string,
+    expectedResume?: ResumeSummary,
+  ): Promise<void> {
+    const normalizedLetter = expectedCoverLetter?.trim();
+    if (normalizedLetter) {
+      const field = await this.#detector.coverLetterField(this.page);
+      if (!field || (await field.inputValue()) !== normalizedLetter) {
+        throw new HhTechnicalError(
+          "UNEXPECTED_PAGE_STATE",
+          "Cover letter was provided but is not present in the HH application form",
+        );
+      }
+    }
+
+    if (expectedResume) {
+      const selectedTitle = await this.page.locator(HhSelectors.resumeTitle).first().textContent();
+      if (normalizeResumeTitle(selectedTitle ?? "") !== expectedResume.title) {
+        throw new HhTechnicalError(
+          "UNEXPECTED_PAGE_STATE",
+          "Selected resume changed before HH application submission",
+        );
+      }
+    }
+
     const button = await this.#detector.submitButton(this.page, root);
     if (!button) throw new HhTechnicalError("SELECTOR_NOT_FOUND", "Application submit button not found");
+    this.#dryRun = false;
+    this.#submissionArmed = true;
     await button.click({ timeout: this.config.timeouts.element });
   }
 
@@ -99,7 +218,7 @@ export class HhApplicationFlow {
     }
   }
 
-  private async installNavigationGuard(dryRun: boolean): Promise<void> {
+  private async installNavigationGuard(): Promise<void> {
     await this.page.route("**/*", async (route: Route) => {
       const request = route.request();
       const method = request.method().toUpperCase();
@@ -115,9 +234,8 @@ export class HhApplicationFlow {
       }
 
       if (
-        dryRun &&
-        (["POST", "PUT", "PATCH", "DELETE"].includes(method) ||
-          knownSubmissionUrlPattern.test(request.url()))
+        (this.#dryRun && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) ||
+        (!this.#submissionArmed && knownSubmissionUrlPattern.test(request.url()))
       ) {
         this.#blockedMutation = true;
         await route.abort("blockedbyclient");
@@ -147,6 +265,29 @@ export class HhApplicationFlow {
       .catch(() => undefined);
   }
 
+  private async revealCoverLetterField(): Promise<Locator | undefined> {
+    const toggle = await firstVisible(this.page, HhSelectors.coverLetterToggle);
+    if (!toggle) return undefined;
+
+    const addControl = toggle.getByText(HhTextPatterns.addCoverLetter).first();
+    const clickTarget = (await addControl.isVisible().catch(() => false)) ? addControl : toggle;
+    await clickTarget.click({ timeout: this.config.timeouts.element });
+    await this.page
+      .waitForFunction(
+        ({ selectors }) =>
+          selectors.some((selector) => {
+            const element = document.querySelector(selector);
+            if (!(element instanceof HTMLElement)) return false;
+            const style = window.getComputedStyle(element);
+            return style.visibility !== "hidden" && style.display !== "none";
+          }),
+        { selectors: [...HhSelectors.coverLetter] },
+        { timeout: this.config.timeouts.element },
+      )
+      .catch(() => undefined);
+    return this.#detector.coverLetterField(this.page);
+  }
+
   private async capturePopup(popup: Page): Promise<void> {
     try {
       await popup.waitForLoadState("domcontentloaded", {
@@ -157,4 +298,8 @@ export class HhApplicationFlow {
       await popup.close().catch(() => undefined);
     }
   }
+}
+
+function normalizeResumeTitle(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
 }
