@@ -20,6 +20,12 @@ export const HhSelectors = {
     '[data-qa="vacancy-company-name"]',
     '[data-qa="vacancy-company"]',
   ],
+  vacancyDescription: ['[data-qa="vacancy-description"]'],
+  vacancyKeySkills: [
+    '[data-qa="vacancy-key-skills"] [data-qa="bloko-tag__text"]',
+    '[data-qa="skills-table"] [data-qa="bloko-tag__text"]',
+    '[data-qa="bloko-tag__text"]',
+  ],
   vacancyClosed: [
     '[data-qa="vacancy-closed"]',
     '[data-qa="vacancy-archived"]',
@@ -40,6 +46,10 @@ export const HhSelectors = {
     '[data-qa="vacancy-response-form"]',
     '[role="dialog"]',
   ],
+  applicationContinue: [
+    '[data-qa="vacancy-response-relocation-warning-confirm"]',
+    '[data-qa="vacancy-response-country-warning-confirm"]',
+  ],
   questionnaire: [
     '[data-qa="task-question"]',
     '[data-qa="vacancy-response-popup-form-questionnaire"]',
@@ -51,6 +61,23 @@ export const HhSelectors = {
   ],
   coverLetterToggle: ['[data-qa="vacancy-response-letter-toggle"]'],
   resumeTitle: '[data-qa="resume-title"]',
+  resumeListLink: [
+    'a[data-qa="resume-title-link"]',
+    '[data-qa="resume-title"] a[href*="/resume/"]',
+    'a[href*="/resume/"]',
+  ],
+  resumePosition: [
+    '[data-qa="resume-block-title-position"]',
+    '[data-qa="resume-title"]',
+  ],
+  resumeExperience: ['[data-qa="resume-block-experience"]'],
+  resumeSkills: [
+    '[data-qa="resume-block-skills"]',
+    '[data-qa="resume-block-skills-content"]',
+  ],
+  resumeEducation: ['[data-qa="resume-block-education"]'],
+  resumeAbout: ['[data-qa="resume-block-about"]'],
+  resumePageBody: "body",
   resumeOptionList: '[data-qa="magritte-select-option-list"][role="listbox"]',
   resumeOption: '[role="option"][data-magritte-select-option]',
   coverLetter: [
@@ -76,9 +103,10 @@ export const HhTextPatterns = {
   vacancyClosed: /ваканси[яи].{0,40}(?:закрыта|в архиве|не найдена|недоступна)/i,
   alreadyApplied: /вы (?:уже )?откликнул(?:ись|ась)|отклик отправлен|посмотреть отклик/i,
   apply: /^откликнуться$/i,
+  applicationContinue: /^вс[её] равно откликнуться$/i,
   questionnaire: /вопросы работодателя|ответьте на вопросы|дополнительные вопросы/i,
   coverLetter: /сопроводительное письмо/i,
-  addCoverLetter: /^добавить$/i,
+  addCoverLetter: /^добавить(?: сопроводительное(?: письмо)?)?$/i,
   submit: /^(?:отправить|откликнуться)$/i,
   success: /отклик отправлен|вы откликнулись|отклик доставлен/i,
 } as const;

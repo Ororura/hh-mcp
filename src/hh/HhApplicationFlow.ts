@@ -68,6 +68,9 @@ export class HhApplicationFlow {
 
     await applyEntry.click({ timeout: this.config.timeouts.element });
     await this.waitForApplicationState();
+    if (await this.continueApplicationWarning()) {
+      await this.waitForApplicationState();
+    }
     await this.#popupTask;
     const detected = await this.#detector.detect(this.page, this.#interceptedExternalUrl);
     return { ...detected, ...(this.#blockedMutation ? { blockedMutation: true } : {}) };
@@ -255,6 +258,7 @@ export class HhApplicationFlow {
         {
           selectors: [
             ...HhSelectors.applicationRoot,
+            ...HhSelectors.applicationContinue,
             ...HhSelectors.questionnaire,
             ...HhSelectors.submissionSuccess,
             ...HhSelectors.captcha,
@@ -265,8 +269,31 @@ export class HhApplicationFlow {
       .catch(() => undefined);
   }
 
+  private async continueApplicationWarning(): Promise<boolean> {
+    const bySelector = await firstVisible(this.page, HhSelectors.applicationContinue);
+    const byRole = this.page
+      .getByRole("button", { name: HhTextPatterns.applicationContinue })
+      .first();
+    const control =
+      bySelector ?? ((await byRole.isVisible().catch(() => false)) ? byRole : undefined);
+    if (!control) return false;
+    await control.click({ timeout: this.config.timeouts.element });
+    return true;
+  }
+
   private async revealCoverLetterField(): Promise<Locator | undefined> {
-    const toggle = await firstVisible(this.page, HhSelectors.coverLetterToggle);
+    const bySelector = await firstVisible(this.page, HhSelectors.coverLetterToggle);
+    const byRole = this.page
+      .getByRole("button", { name: HhTextPatterns.addCoverLetter })
+      .first();
+    const byText = this.page.getByText(HhTextPatterns.addCoverLetter, { exact: true }).first();
+    const toggle =
+      bySelector ??
+      ((await byRole.isVisible().catch(() => false))
+        ? byRole
+        : (await byText.isVisible().catch(() => false))
+          ? byText
+          : undefined);
     if (!toggle) return undefined;
 
     const addControl = toggle.getByText(HhTextPatterns.addCoverLetter).first();

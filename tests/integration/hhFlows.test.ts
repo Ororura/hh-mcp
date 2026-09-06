@@ -75,6 +75,48 @@ describe("HH browser flows", () => {
     }
   });
 
+  it("returns factual vacancy and exact resume context without submitting", async () => {
+    const result = await service.getApplicationContext(
+      fixture.vacancyUrl(100),
+      "Java Backend Developer",
+    );
+    expect(result).toMatchObject({
+      status: "CONTEXT_READY",
+      vacancy: {
+        title: "Backend Developer",
+        description: expect.stringContaining("Spring Boot"),
+        keySkills: ["Java", "Spring Boot", "PostgreSQL"],
+      },
+      resume: {
+        id: "resume-java",
+        title: "Java Backend Developer",
+        position: "Junior Java Backend Developer",
+        experience: expect.stringContaining("Kafka"),
+        skills: expect.stringContaining("JUnit 5"),
+        education: "Applied Computer Science",
+        about: expect.stringContaining("code review"),
+      },
+    });
+    expect(fixture.submitCount).toBe(0);
+  });
+
+  it("returns available resumes when application context title is unavailable", async () => {
+    const result = await service.getApplicationContext(
+      fixture.vacancyUrl(100),
+      "Missing Resume",
+    );
+    expect(result).toMatchObject({
+      status: "RESUME_NOT_FOUND",
+      application: {
+        availableResumes: [
+          { id: "resume-frontend", title: "Frontend Developer" },
+          { id: "resume-java", title: "Java Backend Developer" },
+        ],
+      },
+    });
+    expect(fixture.submitCount).toBe(0);
+  });
+
   it("prepare fills a form but never sends the application", async () => {
     const coverLetter = "CONFIDENTIAL-COVER-LETTER-CONTENT";
     const result = await service.prepareApplication(fixture.vacancyUrl(100), coverLetter);
@@ -174,6 +216,15 @@ describe("HH browser flows", () => {
     expect(fixture.submittedCoverLetter).toBe(coverLetter);
   });
 
+  it("reveals the current text-only cover-letter control in dry-run mode", async () => {
+    const result = await service.prepareApplication(fixture.vacancyUrl(120), "Expected letter");
+    expect(result).toMatchObject({
+      status: "READY_TO_SUBMIT",
+      application: { coverLetterFieldFound: true, coverLetterFilled: true },
+    });
+    expect(fixture.submitCount).toBe(0);
+  });
+
   it("selects a resume by stable HH id before submit", async () => {
     const result = await service.submitApplication(fixture.vacancyUrl(118), "Hello", {
       id: "resume-java",
@@ -196,6 +247,21 @@ describe("HH browser flows", () => {
     expect(result).toMatchObject({
       status: "READY_TO_SUBMIT",
       application: {
+        selectedResume: { id: "resume-java", title: "Java Backend Developer" },
+      },
+    });
+    expect(fixture.submitCount).toBe(0);
+  });
+
+  it("continues through a country warning before preparing the application", async () => {
+    const result = await service.prepareApplication(fixture.vacancyUrl(119), "Hello", {
+      title: "Java Backend Developer",
+    });
+    expect(result).toMatchObject({
+      status: "READY_TO_SUBMIT",
+      application: {
+        coverLetterFilled: true,
+        questionnaireRequired: false,
         selectedResume: { id: "resume-java", title: "Java Backend Developer" },
       },
     });

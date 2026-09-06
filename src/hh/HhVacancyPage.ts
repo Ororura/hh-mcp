@@ -41,6 +41,19 @@ export class HhVacancyPage {
     };
   }
 
+  async applicationContext(): Promise<VacancySummary> {
+    const [summary, description, keySkills] = await Promise.all([
+      this.summary(),
+      this.readText(HhSelectors.vacancyDescription),
+      this.readTexts(HhSelectors.vacancyKeySkills),
+    ]);
+    return {
+      ...summary,
+      ...(description ? { description } : {}),
+      ...(keySkills.length > 0 ? { keySkills } : {}),
+    };
+  }
+
   async classify(): Promise<VacancyClassification> {
     if (
       (await anyVisible(this.page, HhSelectors.vacancyClosed)) ||
@@ -97,5 +110,15 @@ export class HhVacancyPage {
     const value = await locator?.textContent();
     const normalized = value?.replace(/\s+/g, " ").trim();
     return normalized || undefined;
+  }
+
+  private async readTexts(selectors: readonly string[]): Promise<string[]> {
+    for (const selector of selectors) {
+      const values = await this.page.locator(selector).allTextContents();
+      const normalized = [...new Set(values.map((value) => value.replace(/\s+/g, " ").trim()))]
+        .filter(Boolean);
+      if (normalized.length > 0) return normalized;
+    }
+    return [];
   }
 }

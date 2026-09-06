@@ -70,7 +70,40 @@ export class HhFixtureServer {
     }
 
     if (url.pathname === "/applicant/resumes") {
-      this.html(response, this.page("Session", "", this.sessionMode));
+      const resumes =
+        this.sessionMode === "authenticated"
+          ? '<a data-qa="resume-title-link" href="/resume/resume-frontend">Frontend Developer</a>' +
+            '<a data-qa="resume-title-link" href="/resume/resume-java">Постоянная работа' +
+            '<span data-qa="resume-title">Java Backend Developer</span>120 000 ₽ · Удалённо</a>'
+          : "";
+      this.html(response, this.page("Session", resumes, this.sessionMode));
+      return;
+    }
+
+    if (url.pathname === "/resume/resume-java") {
+      this.html(
+        response,
+        this.page(
+          "Java Backend Developer",
+          '<section data-qa="resume-block-title-position">Junior Java Backend Developer</section>' +
+            '<h2>Опыт работы</h2><section>Commercial backend development: implemented REST APIs with Java 21 and Spring Boot; optimized PostgreSQL queries; integrated services through Kafka.</section>' +
+            '<h2>Навыки</h2><section>Java 21, Spring Boot, PostgreSQL, Kafka, JUnit 5, Mockito, Docker</section>' +
+            '<h2>Образование</h2><section>Applied Computer Science</section>' +
+            '<h2>О себе</h2><section>Worked in Scrum, used GitLab and participated in code review.</section>',
+        ),
+      );
+      return;
+    }
+
+    if (url.pathname === "/resume/resume-frontend") {
+      this.html(
+        response,
+        this.page(
+          "Frontend Developer",
+          '<section data-qa="resume-block-experience">Built React user interfaces.</section>' +
+            '<section data-qa="resume-block-skills">React, TypeScript</section>',
+        ),
+      );
       return;
     }
 
@@ -138,6 +171,20 @@ export class HhFixtureServer {
           "authenticated",
           scripts,
         );
+      case 119:
+        return this.page(
+          "Country warning",
+          this.applyButton("showCountryWarning()"),
+          "authenticated",
+          scripts,
+        );
+      case 120:
+        return this.page(
+          "Text letter toggle",
+          this.applyButton("showTextLetterForm()"),
+          "authenticated",
+          scripts,
+        );
       default:
         return this.page("Backend Developer", this.applyButton("showForm(true, false)"), "authenticated", scripts);
     }
@@ -160,7 +207,10 @@ export class HhFixtureServer {
     return `<!doctype html>
       <html lang="ru"><head><meta charset="utf-8"><title>${title}</title></head>
       <body>${menu}<h1 data-qa="vacancy-title">${title}</h1>
-      <div data-qa="vacancy-company-name">Example</div>${content}<script>${script}</script></body></html>`;
+      <div data-qa="vacancy-company-name">Example</div>
+      <div data-qa="vacancy-description">Develop Java and Spring Boot services, REST APIs, PostgreSQL integrations and automated tests.</div>
+      <div data-qa="vacancy-key-skills"><span data-qa="bloko-tag__text">Java</span><span data-qa="bloko-tag__text">Spring Boot</span><span data-qa="bloko-tag__text">PostgreSQL</span></div>
+      ${content}<script>${script}</script></body></html>`;
   }
 
   private html(response: ServerResponse, body: string): void {
@@ -170,6 +220,17 @@ export class HhFixtureServer {
 }
 
 const scripts = `
+  function showCountryWarning() {
+    document.body.insertAdjacentHTML('beforeend',
+      '<div data-qa="country-warning">' +
+      '<p>Вы откликаетесь на вакансию в другой стране</p>' +
+      '<button data-qa="vacancy-response-country-warning-confirm" onclick="continueAfterCountryWarning()">Все равно откликнуться</button>' +
+      '<button>Отменить</button></div>');
+  }
+  function continueAfterCountryWarning() {
+    document.querySelector('[data-qa="country-warning"]')?.remove();
+    showResumeForm();
+  }
   function showQuestionnaire() {
     document.body.insertAdjacentHTML('beforeend',
       '<h2>Ответьте на вопросы</h2>' +
@@ -213,6 +274,20 @@ const scripts = `
       '<div role="button" tabindex="0" data-qa="vacancy-response-letter-toggle">' +
       '<span>Сопроводительное письмо</span><span onclick="showHiddenLetter(event)">Добавить</span></div>' +
       '<button data-qa="vacancy-response-submit-popup" onclick="submitApplication()">Отправить</button></div>');
+  }
+  function showTextLetterForm() {
+    document.body.insertAdjacentHTML('beforeend',
+      '<div role="dialog" data-qa="vacancy-response-popup">' +
+      '<button onclick="showTextLetter(event)">Добавить сопроводительное</button>' +
+      '<button data-qa="vacancy-response-submit-popup" onclick="submitApplication()">Отправить</button></div>');
+  }
+  function showTextLetter(event) {
+    event.stopPropagation();
+    event.currentTarget.insertAdjacentHTML(
+      'beforebegin',
+      '<textarea data-qa="vacancy-response-popup-form-letter-input"></textarea>',
+    );
+    event.currentTarget.remove();
   }
   function showHiddenLetter(event) {
     event.stopPropagation();

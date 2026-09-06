@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  applicationContextInputSchema,
+  applicationContextOutputSchema,
   applicationInputSchema,
   prepareApplicationOutputSchema,
   submitApplicationOutputSchema,
@@ -35,6 +37,37 @@ describe("MCP schemas", () => {
         resume: {},
       }).success,
     ).toBe(false);
+  });
+
+  it("validates the read-only application context contract", () => {
+    expect(
+      applicationContextInputSchema.safeParse({
+        vacancyUrl: "https://spb.hh.ru/vacancy/123",
+        resumeTitle: "Java Backend Developer",
+      }).success,
+    ).toBe(true);
+    expect(
+      applicationContextInputSchema.safeParse({
+        vacancyUrl: "https://spb.hh.ru/vacancy/123",
+        resumeTitle: "",
+      }).success,
+    ).toBe(false);
+    expect(
+      applicationContextOutputSchema.safeParse({
+        status: "CONTEXT_READY",
+        vacancy: {
+          id: "123",
+          url: "https://spb.hh.ru/vacancy/123",
+          description: "Java and Spring Boot",
+        },
+        resume: {
+          id: "resume-id",
+          title: "Java Backend Developer",
+          url: "https://spb.hh.ru/resume/resume-id",
+          experience: "Built REST APIs",
+        },
+      }).success,
+    ).toBe(true);
   });
 
   it("does not advertise submit as a prepare result", () => {

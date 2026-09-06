@@ -2,7 +2,7 @@
 
 Локальный stdio MCP server для надёжного выполнения действий соискателя на HH.ru через Playwright. Сервер проверяет сессию и состояние вакансии, готовит форму в безопасном dry-run режиме и выполняет реальный отклик только через отдельный destructive tool.
 
-Сервер не ищет и не оценивает вакансии, не анализирует резюме, не выбирает `APPLY/SKIP`, не генерирует сопроводительные письма и не отвечает на вопросы работодателя.
+Сервер не ищет и не оценивает вакансии, не анализирует соответствие резюме, не выбирает `APPLY/SKIP`, не генерирует сопроводительные письма и не отвечает на вопросы работодателя. Read-only tool может вернуть текст вакансии и выбранного резюме внешнему Codex-агенту для генерации письма.
 
 ## Требования и установка
 
@@ -119,6 +119,47 @@ Input:
 ```
 
 Statuses: `AVAILABLE`, `ALREADY_APPLIED`, `VACANCY_CLOSED`, `AUTH_REQUIRED`, `CAPTCHA_REQUIRED`, `EXTERNAL_APPLICATION`, `UNSUPPORTED_FLOW`, `BUSY`, `FAILED`.
+
+### `hh_get_application_context`
+
+Read-only tool для персонализации сопроводительного письма внешним Codex-агентом. Он не открывает форму отклика и ничего не отправляет.
+
+Input:
+
+```json
+{
+  "vacancyUrl": "https://hh.ru/vacancy/123456789",
+  "resumeTitle": "Java Backend разработчик"
+}
+```
+
+Успех:
+
+```json
+{
+  "status": "CONTEXT_READY",
+  "vacancy": {
+    "id": "123456789",
+    "title": "Junior Java Backend Developer",
+    "employer": "Example",
+    "url": "https://hh.ru/vacancy/123456789",
+    "description": "...",
+    "keySkills": ["Java", "Spring Boot", "PostgreSQL"]
+  },
+  "resume": {
+    "id": "8e190203ff110169ee0039ed1f6e45526c5843",
+    "title": "Java Backend разработчик",
+    "url": "https://hh.ru/resume/8e190203ff110169ee0039ed1f6e45526c5843",
+    "position": "Junior Java Backend Developer",
+    "experience": "...",
+    "skills": "...",
+    "education": "...",
+    "about": "..."
+  }
+}
+```
+
+Название сопоставляется точно. При отсутствии или неоднозначности возвращается `RESUME_NOT_FOUND` и `application.availableResumes`. Если HH UI не позволяет безопасно извлечь описание или содержательные разделы резюме, возвращается `UNSUPPORTED_FLOW`, а письмо не генерируется.
 
 ### `hh_prepare_application`
 
@@ -268,7 +309,7 @@ HhMcpServer → HhAutomationService → explicit state machine
 Не поддерживаются:
 
 - поиск, scoring и выбор вакансий;
-- генерация cover letter;
+- генерация cover letter внутри MCP (её выполняет внешний Codex-агент на основе `hh_get_application_context`);
 - автоматические ответы на questionnaire;
 - CAPTCHA solving, anti-bot bypass, proxy, stealth/fingerprint spoofing;
 - несколько HH-аккаунтов;
@@ -281,9 +322,11 @@ HhMcpServer → HhAutomationService → explicit state machine
 Внешний Java Backend или AI orchestrator может независимо выполнить scoring и затем использовать последовательность:
 
 ```text
-hh_inspect_vacancy
+hh_get_application_context(vacancyUrl, resumeTitle)
+→ Codex генерирует factual cover letter
 → hh_prepare_application
-→ explicit approval
+→ если QUESTIONNAIRE_REQUIRED: остановиться без ответов и submit
+→ подтверждение destructive tool в MCP-клиенте
 → hh_submit_application
 → сохранить SUBMITTED во внешнем backend
 ```

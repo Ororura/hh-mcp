@@ -22,6 +22,21 @@ export const vacancyStatuses = [
 
 export type VacancyStatus = (typeof vacancyStatuses)[number];
 
+export const applicationContextStatuses = [
+  "CONTEXT_READY",
+  "ALREADY_APPLIED",
+  "VACANCY_CLOSED",
+  "AUTH_REQUIRED",
+  "CAPTCHA_REQUIRED",
+  "EXTERNAL_APPLICATION",
+  "RESUME_NOT_FOUND",
+  "UNSUPPORTED_FLOW",
+  "BUSY",
+  "FAILED",
+] as const;
+
+export type ApplicationContextStatus = (typeof applicationContextStatuses)[number];
+
 export const prepareApplicationStatuses = [
   "READY_TO_SUBMIT",
   "ALREADY_APPLIED",
@@ -59,7 +74,7 @@ export const applicationStatuses = [
 
 export type ApplicationStatus = (typeof applicationStatuses)[number];
 
-export type ToolStatus = SessionStatus | VacancyStatus | ApplicationStatus;
+export type ToolStatus = SessionStatus | VacancyStatus | ApplicationContextStatus | ApplicationStatus;
 
 export const diagnosticStatuses = new Set<ToolStatus>([
   "CAPTCHA_REQUIRED",

@@ -6,6 +6,7 @@ import type { HhConfig } from "../config/config.js";
 import { asTechnicalError } from "../domain/errors.js";
 import {
   busyResult,
+  type ApplicationContextResult,
   type ApplicationResult,
   type FailedResult,
   type HhToolResult,
@@ -17,6 +18,7 @@ import type { ResumeSelection, ResumeSummary } from "../domain/resume.js";
 import { diagnosticStatuses } from "../domain/statuses.js";
 import type { ApplicationHistoryRepository } from "../history/ApplicationHistoryRepository.js";
 import { HhApplicationFlow } from "../hh/HhApplicationFlow.js";
+import { HhResumePage } from "../hh/HhResumePage.js";
 import type { HhSessionDetector } from "../hh/HhSessionDetector.js";
 import type { HhUrlPolicy } from "../hh/HhUrlPolicy.js";
 import { HhVacancyPage } from "../hh/HhVacancyPage.js";
@@ -97,6 +99,75 @@ export class HhAutomationService {
         ...(classification.externalUrl ? { externalUrl: classification.externalUrl } : {}),
       };
     }, parsed.url, "hh_inspect_vacancy");
+  }
+
+  async getApplicationContext(
+    vacancyUrl: string,
+    resumeTitle: string,
+  ): Promise<ApplicationContextResult> {
+    const parsed = this.urlPolicy.parseVacancyUrl(vacancyUrl);
+    return this.execute("application-context", parsed.id, async ({ session }) => {
+      const vacancyPage = new HhVacancyPage(session.page, parsed.url, this.urlPolicy, this.config);
+      this.logger.info(`[HH] Opening vacancy ${parsed.id}`);
+      await vacancyPage.open();
+      const vacancy = await vacancyPage.applicationContext();
+      const authResult = await this.classifyAuth(session);
+      if (authResult) return { ...authResult, vacancy };
+
+      const classification = await vacancyPage.classify();
+      if (classification.status !== "AVAILABLE") {
+        return {
+          status: classification.status,
+          vacancy,
+          ...(classification.externalUrl ? { externalUrl: classification.externalUrl } : {}),
+        } as ApplicationContextResult;
+      }
+      if (!vacancy.description) {
+        return {
+          status: "UNSUPPORTED_FLOW",
+          vacancy,
+          message: "HH vacancy description could not be read safely",
+        };
+      }
+
+      const resumePage = new HhResumePage(
+        session.page,
+        this.config.baseUrl,
+        this.urlPolicy,
+        this.config,
+      );
+      this.logger.info("[HH] Opening resume list");
+      await resumePage.openList();
+      const resumeAuthResult = await this.classifyAuth(session);
+      if (resumeAuthResult) return { ...resumeAuthResult, vacancy };
+
+      const lookup = await resumePage.findByExactTitle(resumeTitle);
+      if (!lookup.found) {
+        return {
+          status: lookup.unsupported ? "UNSUPPORTED_FLOW" : "RESUME_NOT_FOUND",
+          vacancy,
+          message: lookup.unsupported
+            ? "HH resume list could not be read safely"
+            : "Requested resume was not found or its title is ambiguous",
+          application: { availableResumes: lookup.availableResumes },
+        };
+      }
+
+      const resumeAuthAfterNavigation = await this.classifyAuth(session);
+      if (resumeAuthAfterNavigation) return { ...resumeAuthAfterNavigation, vacancy };
+      const { experience, skills, education, about } = lookup.resume;
+      if (!experience && !skills && !education && !about) {
+        return {
+          status: "UNSUPPORTED_FLOW",
+          vacancy,
+          resume: lookup.resume,
+          message: "HH resume content could not be read safely",
+        };
+      }
+
+      this.logger.info("[HH] Application context ready");
+      return { status: "CONTEXT_READY", vacancy, resume: lookup.resume };
+    }, parsed.url, "hh_get_application_context");
   }
 
   async prepareApplication(
